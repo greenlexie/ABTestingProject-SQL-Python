@@ -1,0 +1,128 @@
+create temporary table tmpTest2 as
+select * from mta_ab.test
+where testid = 2;
+
+select controlgroup, count(1) from tmptest2
+group by 1;
+
+# check outliers and trends
+select
+Date
+, count(1)
+from tmptest2
+group by 1
+order by 1;
+
+# revenue outlier
+select
+controlgroup
+, count(distinct sessionid) `all sessions`
+, count(distinct case when totalrev>=1000 and totalrev<=5000 then sessionid end) as rev1000
+, count(distinct case when totalrev>=5000 and totalrev<10000 then sessionid end) as rev5000
+, count(distinct case when totalrev>=10000 then sessionid end) as rev10000
+from mta_ab.test_rev
+where testid=2
+group by 1;
+
+# overall performance
+# check out funnels metrics (cart page > proceed to payment > enter payment > confirmation page)
+# reachedcheckoutrate > enterpaymentrate > ConversionRate (CVR) shorterm longterm
+select
+	Controlgroup
+	, count(distinct cusid) TotalCustomers
+    , count(distinct sessionid) TotalSessions
+    , count(distinct case when bounced = 1 then cusid end) Bounce
+    , count(distinct case when addedtocart = 1 then cusid end) ATC
+    , count(distinct case when ReachedCheckout = 1 then cusid end) ReachedCheckedout
+    , count(distinct case when converted = 1 then cusid end) Converted
+from tmptest2
+where date between '2019-06-18' and '2019-07-11'
+group by 1;
+
+select
+	controlgroup
+    , count(distinct Sessionid) TotalSessions
+    , sum(Totalrev) SumTotalRev
+    , sum(totalrev * totalrev) SumTotalRev_Sq #Needed for p-value
+from mta_ab.test_rev
+where date between '2019-06-18' and '2019-07-11'
+	and testid = 2
+group by 1;
+
+# join cusid into this part
+
+# cuts of data
+select
+	Controlgroup
+    , VisitorTypeId
+	, count(distinct cusid) TotalCustomers
+    , count(distinct sessionid) TotalSessions
+    , count(distinct case when bounced = 1 then cusid end) Bounce
+    , count(distinct case when addedtocart = 1 then cusid end) ATC
+    , count(distinct case when ReachedCheckout = 1 then cusid end) ReachedCheckedout
+    , count(distinct case when converted = 1 then cusid end) Converted
+from tmptest2
+where date between '2019-06-18' and '2019-07-11'
+group by 1, 2;
+
+## Find customers who 'flipped' (cross platforms shopper >- incogito, cleared cookie, not recognizable)
+create temporary table customer_info as
+select distinct
+	ControlGroup
+    , CusId
+from tmptest2
+where date between '2019-06-18' and '2019-07-11'
+;
+
+select count(distinct a.cusid)
+from Customer_info a
+join tmptest2 b
+on a.cusid = b.cusid
+and a.controlgroup != b.controlgroup
+where b.date between '2019-06-18' and '2019-07-11';
+
+select 105169 / count(distinct cusid)
+from tmptest2
+where date between '2019-06-18' and '2019-07-11';
+
+create table test2_overall as 
+select * from mta_ab.test
+where TestID = 2;
+
+select * from mta_ab.MTA_AB_Test2_Data;
+
+create table MTA_AB_Test2_Data as
+select
+	TestID
+    , ControlGroup
+    , (case when ControlGroup = 1 then 0
+			when ControlGroup = 0 then 1 end) as TestGroup
+    , `Date`
+    , SessionID
+    , `Channel`
+    , CategoryID
+    , PlatformID
+    , CusID
+    , VisitorTypeID
+    , SecondsOnSite
+    , Bounced
+    , SawProduct
+    , AddedToCart
+    , ReachedCheckout
+    , Converted
+from mta_ab.test2_overall;
+
+create table MTA_AB_Test2_Rev AS
+select
+	TestID
+    , ControlGroup
+    , (case when ControlGroup = 1 then 0
+			when ControlGroup = 0 then 1 end) as TestGroup
+	, `Date`
+    , SessionID
+    , TotalRev
+    from mta_ab.test_rev
+where TestID = 2;
+
+select testgroup, sum(totalrev) from mta_ab.MTA_AB_Test2_Rev
+group by 1;
